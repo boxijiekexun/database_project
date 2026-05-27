@@ -1,0 +1,4 @@
+username,password,email,phone,role,real_name,student_no,college,class_name
+student20240001,123456,student20240001@campus.edu.cn,13800010001,STUDENT,张三,STU20240001,计算机学院,2024级1班
+student20240002,123456,student20240002@campus.edu.cn,13800010002,STUDENT,李四,STU20240002,计算机学院,2024级1班
+teacher20240001,123456,teacher20240001@campus.edu.cn,13900010001,TEACHER,王老师,TCH20240001,计算机学院,教师组
