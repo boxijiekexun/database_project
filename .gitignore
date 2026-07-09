@@ -1,4 +1,3 @@
-@"
 # Node
 frontend/node_modules/
 frontend/dist/
@@ -6,19 +5,24 @@ frontend/dist/
 # Go
 backend-go/*.exe
 backend-go/.env
+backend-go/.gocache/
+backend-go/.gomodcache/
 
 # C++ build outputs
 cpp-tools/*.exe
 cpp-tools/*.o
 
+# Archives / local exports
+*.zip
+
 # OS / Editor
 .DS_Store
 .vscode/
 .idea/
+~$*
 
 # Logs
 *.log
 
 # Environment
 .env
-"@ | Set-Content -Encoding UTF8 .gitignore

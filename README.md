@@ -42,14 +42,25 @@ project1/
 
 ```powershell
 cd F:\study\database\project1
-Get-Content .\database\schema.sql | mysql -u root -p
+mysql -u root -p -e "DROP DATABASE IF EXISTS campus_takeout; CREATE DATABASE campus_takeout DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+Get-Content -Raw .\schema.sql | mysql -u root -p campus_takeout 
 ```
 
 ### 5.2 启动后端
 
 ```powershell
 cd F:\study\database\project1\backend-go
-$env:MYSQL_DSN="root:200411@tcp(127.0.0.1:3306)/campus_takeout?parseTime=true&charset=utf8mb4&loc=Local"
+$env:MYSQL_DSN="root:your_mysql_password@tcp(127.0.0.1:3306)/campus_takeout?parseTime=true&charset=utf8mb4&loc=Local"
+$env:DB_MAX_OPEN_CONNS="50"
+$env:DB_MAX_IDLE_CONNS="10"
+$env:DB_CONN_MAX_LIFETIME_MINUTES="30"
+$env:DB_CONN_MAX_IDLE_TIME_MINUTES="10"
+$env:DB_QUERY_TIMEOUT_SECONDS="3"
+$env:LOGIN_RATE_LIMIT_PER_MIN="30"
+$env:ORDER_RATE_LIMIT_PER_MIN="20"
+$env:UPLOAD_RATE_LIMIT_PER_MIN="20"
+$env:ROUTE_CACHE_TTL_SECONDS="30"
+$env:RECOMMEND_CACHE_TTL_SECONDS="60"
 go run .
 ```
 
@@ -115,6 +126,50 @@ g++ -std=c++17 sales_analyzer.cpp -o sales_analyzer.exe
 - 用户端新增食堂区域体系与 AI 推荐菜品区
 - 商家端新增 AI 生成菜品文案与图片提示词
 
+## 11.1 本次改动说明
+
+- 文件注释：后端主入口、认证/用户/店铺/订单/AI 模块，前端入口与核心页面，数据库脚本和 C++ 工具都补充了中文文件作用说明。
+- 评价修复：订单查询接口增加 `reviewed` 字段，前端只在 `status === "COMPLETED" && !reviewed` 时显示“评价”，评价成功后刷新订单和评论区。
+- 店铺详情页：重排为更像外卖平台的三栏布局，包含分类导航、菜品列表、固定购物车和评论区。
+- 图片上传：商家端新增菜品图片上传入口，后端开放 `/uploads` 静态目录，学生端可直接看到菜品图片。
+- 评论分析：店铺详情页新增点评关键词云和评论摘要，基于 `reviews.rating` 与 `reviews.content` 实时统计生成。
+- AI 图片提示词：商家端支持生成中文/英文图片提示词与负面提示词，该功能只生成 prompt，不直接生成真实图片。
+- 稳定性优化：新增数据库连接池配置、SQL 超时、登录/下单/上传限流、食堂与推荐接口缓存、订单分页与关键失败日志。
+
+## 11.2 稳定性与并发优化
+
+- 连接池：支持 `DB_MAX_OPEN_CONNS`、`DB_MAX_IDLE_CONNS`、`DB_CONN_MAX_LIFETIME_MINUTES`、`DB_CONN_MAX_IDLE_TIME_MINUTES`。
+- SQL 超时：仓储层主要数据库操作统一使用 `DB_QUERY_TIMEOUT_SECONDS` 控制超时，避免慢 SQL 长时间占用连接。
+- 下单事务：下单仍在一个事务内完成，金额由后端按数据库价格计算，库存扣减使用 `UPDATE ... WHERE stock >= ?` 防止超卖。
+- 状态流转：商家更新订单状态时使用条件更新，避免并发下重复流转。
+- 限流：登录、下单、图片上传接口按 IP 做分钟级限流，超出返回 `429`。
+- 缓存：`/api/dining-areas`、`/api/dining-areas/:id/canteens`、`/api/canteens/:id/stores`、`/api/ai/recommend/dishes` 使用内存短缓存。
+- 分页：订单列表接口支持可选 `page` / `page_size`；不传分页参数时仍保持原返回结构，兼容现有前端。
+
+## 11.3 压测建议
+
+- 推荐先压测只读接口：`/api/dining-areas`、`/api/canteens/:id/stores`、`/api/ai/recommend/dishes`。
+- 再压测写接口：登录、下单、商家流转、图片上传。
+- 可使用 `ab`、`wrk`、`hey` 或 JMeter，例如：
+
+```powershell
+hey -n 500 -c 50 http://localhost:8080/health
+hey -n 200 -c 20 -m GET -H "Authorization: Bearer <token>" http://localhost:8080/api/dining-areas
+```
+
+- 重点观察：
+  - 后端日志中是否出现登录失败、库存不足、状态流转冲突、AI fallback、上传失败等记录
+  - MySQL 连接数是否稳定在连接池限制之内
+  - 慢查询或锁等待是否明显增加
+
+## 11.4 服务器部署建议
+
+- 生产环境应修改 `JWT_SECRET`、`MYSQL_DSN`，不要使用开发默认值。
+- 建议使用 Nginx 反向代理 Go 服务，并把 `/uploads/` 暴露为静态目录。
+- 建议把 MySQL 与后端部署在同一内网，降低连接延迟。
+- 建议根据机器配置调整连接池，例如 2C/4G 机器可从 `30~50` 的最大连接数开始试。
+- 若访问量继续增大，可把当前内存缓存和限流迁移到 Redis / 网关层。
+
 ## 12. 演示顺序
 
 1. 启动 MySQL 并导入 schema.sql
@@ -130,7 +185,7 @@ g++ -std=c++17 sales_analyzer.cpp -o sales_analyzer.exe
 
 - 登录页：账号登录并按角色跳转
 - 用户页：店铺/菜品浏览、购物车、下单、支付、评价、订单详情弹层、食堂区域与 AI 推荐
-- 商家页：店铺与菜品管理、订单流转、AI 文案生成、订单详情弹层
+- 商家页：店铺与菜品管理、菜品图片上传、订单流转、AI 文案生成、订单详情弹层
 - 管理员页：全局订单、订单详情、统计卡片、用户管理、批量导入
 
 ## 14. 常见问题补充
@@ -138,6 +193,8 @@ g++ -std=c++17 sales_analyzer.cpp -o sales_analyzer.exe
 - 订单详情没有明细：点击“查看详情”会自动请求详情接口补全 items
 - 订单状态按钮不可点：仅在满足状态流转规则时显示下一步按钮
 - 评价失败提示已评价：后端已限制一单一评，属于预期行为
+- 菜品图片不显示：检查后端是否启动在 `http://localhost:8080`，并确认 `backend-go/uploads/dishes` 下已有图片文件
+- 上传图片失败：仅支持 `jpg/jpeg/png/webp`，并且文件大小不能超过后端限制
 - 前端请求 401：检查 localStorage 中 token 是否过期，重新登录
 - 管理员批量导入用户：上传符合表头要求的 CSV 文件，系统会逐行校验并返回成功/失败明细
 - AI 接口没有配置 Key：系统会自动使用本地 fallback，不会返回 500

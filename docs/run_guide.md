@@ -11,11 +11,51 @@ Get-Content .\database\schema.sql | mysql -u root -p
 
 ```powershell
 cd F:\study\database\project1\backend-go
-$env:MYSQL_DSN="root:200411@tcp(127.0.0.1:3306)/campus_takeout?parseTime=true&charset=utf8mb4&loc=Local"
+$env:MYSQL_DSN="root:your_mysql_password@tcp(127.0.0.1:3306)/campus_takeout?parseTime=true&charset=utf8mb4&loc=Local"
+$env:DB_MAX_OPEN_CONNS="50"
+$env:DB_MAX_IDLE_CONNS="10"
+$env:DB_CONN_MAX_LIFETIME_MINUTES="30"
+$env:DB_CONN_MAX_IDLE_TIME_MINUTES="10"
+$env:DB_QUERY_TIMEOUT_SECONDS="3"
+$env:LOGIN_RATE_LIMIT_PER_MIN="30"
+$env:ORDER_RATE_LIMIT_PER_MIN="20"
+$env:UPLOAD_RATE_LIMIT_PER_MIN="20"
+$env:ROUTE_CACHE_TTL_SECONDS="30"
+$env:RECOMMEND_CACHE_TTL_SECONDS="60"
 go run .
 ```
 
 后端默认地址：http://localhost:8080
+
+### 2.1 连接池参数说明
+
+- `DB_MAX_OPEN_CONNS`：最大打开连接数，默认 `50`
+- `DB_MAX_IDLE_CONNS`：最大空闲连接数，默认 `10`
+- `DB_CONN_MAX_LIFETIME_MINUTES`：单连接最大生命周期，默认 `30` 分钟
+- `DB_CONN_MAX_IDLE_TIME_MINUTES`：空闲连接最大保留时间，默认 `10` 分钟
+- `DB_QUERY_TIMEOUT_SECONDS`：主要 SQL 操作超时时间，默认 `3` 秒
+
+建议先使用默认值，本机压测后再微调。
+
+### 2.2 限流说明
+
+- 登录接口：`/api/auth/login`
+- 下单接口：`/api/orders`
+- 图片上传接口：`/api/merchant/upload/dish-image`
+
+以上接口按 IP 做分钟级限流，超过阈值返回 `429 Too Many Requests`。
+
+### 2.3 缓存说明
+
+当前使用短时内存缓存的接口：
+
+- `/api/dining-areas`
+- `/api/dining-areas/:id/canteens`
+- `/api/canteens/:id/stores`
+- `/api/ai/recommend/dishes`
+
+缓存时间默认 `30` 秒或 `60` 秒，可通过 `ROUTE_CACHE_TTL_SECONDS`、`RECOMMEND_CACHE_TTL_SECONDS` 调整。
+购物车、下单、支付、评价等强一致接口不会缓存。
 
 ## 3. 启动前端
 
@@ -34,6 +74,22 @@ cd F:\study\database\project1\cpp-tools
 g++ -std=c++17 data_generator.cpp -o data_generator.exe
 g++ -std=c++17 sales_analyzer.cpp -o sales_analyzer.exe
 ```
+
+## 4.1 图片上传测试
+
+1. 使用 `merchant01 / 123456` 登录商家端。
+2. 在新增菜品区域选择一张 `jpg/png/webp` 图片。
+3. 点击“上传图片”，成功后会回填 `image_url` 并显示预览。
+4. 上传文件保存在 `backend-go/uploads/dishes/`。
+5. 如果图片无法显示，先检查后端 `main.go` 是否已注册 `/uploads` 静态路由。
+
+## 4.2 评价功能测试
+
+1. 使用学生账号下单并支付。
+2. 使用商家账号把订单流转到 `COMPLETED`。
+3. 学生重新查看店铺详情页或订单列表。
+4. 只有已完成且未评价订单会显示“评价”按钮。
+5. 提交成功后会变成“已评价”，并刷新评论区。
 
 ## 5. AI 可选配置
 
@@ -102,3 +158,32 @@ username,password,email,phone,role,real_name,student_no,college,class_name
 现象：访问受保护接口返回 missing bearer token。
 
 处理：登录后在请求头携带 Authorization: Bearer <token>。
+
+## 8. 压测方式
+
+### 8.1 简单压测健康检查
+
+```powershell
+hey -n 1000 -c 100 http://localhost:8080/health
+```
+
+### 8.2 压测读接口
+
+```powershell
+hey -n 500 -c 50 -m GET -H "Authorization: Bearer <token>" http://localhost:8080/api/dining-areas
+hey -n 500 -c 50 -m GET -H "Authorization: Bearer <token>" http://localhost:8080/api/ai/recommend/dishes
+```
+
+### 8.3 压测写接口注意事项
+
+- 登录接口会被限流，不适合无限制高并发重复压。
+- 下单接口依赖购物车和库存，压测前要准备好测试数据。
+- 图片上传接口也有限流，压测时建议使用小文件并控制并发。
+
+## 9. 部署到服务器的建议
+
+- 使用环境变量而不是写死数据库地址和 JWT 密钥。
+- 使用 Nginx 反向代理 `:8080`，并代理 `/uploads/` 静态资源。
+- 给 MySQL 单独开放内网访问，不要直接暴露公网。
+- 上线前根据机器配置调整连接池大小和超时参数。
+- 如果后续要承受更高并发，可把缓存与限流迁移到 Redis / API 网关。

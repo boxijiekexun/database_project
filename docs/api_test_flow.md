@@ -19,7 +19,7 @@ Get-Content .\database\schema.sql | mysql -u root -p
 
 ```powershell
 cd F:\study\database\project1\backend-go
-$env:MYSQL_DSN="root:200411@tcp(127.0.0.1:3306)/campus_takeout?parseTime=true&charset=utf8mb4&loc=Local"
+$env:MYSQL_DSN="root:your_mysql_password@tcp(127.0.0.1:3306)/campus_takeout?parseTime=true&charset=utf8mb4&loc=Local"
 go run .
 ```
 
