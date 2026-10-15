@@ -2,7 +2,16 @@
 
 ## 1. 项目简介
 
-本项目是数据库课程设计示例，目标是实现一个可演示的校园外卖管理系统，覆盖用户下单、商家履约、管理员监管的完整业务闭环。
+这是一个数据库课程设计项目：从学生选餐下单、商家接单与配送，到管理员查看订单和管理用户，串起一条可本地演示的业务流程。支付为**模拟支付**；项目尚无公开在线演示，按照下方步骤可在本地运行。
+
+### 值得关注的实现
+
+- **下单一致性**：在事务中创建订单，金额按数据库中的菜品价格计算；库存扣减使用条件更新，避免并发超卖。
+- **订单状态**：按 `PAID → ACCEPTED → PREPARING → DELIVERING → COMPLETED` 流转，条件更新避免重复操作。
+- **后端稳定性**：数据库连接池、SQL 超时、接口限流、短时内存缓存及订单分页。
+- **可追溯的设计**：[数据库设计](docs/database_design.md) · [事务设计](docs/transaction_design.md) · [接口联调](docs/api_test_flow.md) · [本地运行指南](docs/run_guide.md)。
+
+> 项目定位是课程设计与工程练习，不是生产环境外卖服务。推荐菜品采用基于订单等数据的规则排序；菜品文案可选接入 DeepSeek，未配置 Key 时使用本地 fallback；图片功能生成提示词，不直接生成图片。
 
 ## 2. 技术栈
 
@@ -15,7 +24,7 @@
 ## 3. 目录结构
 
 ```text
-project1/
+database_project/
 ├── backend-go/     Go + Gin 后端
 ├── frontend/       Vue3 + Vite 前端
 ├── database/       MySQL SQL 文件
@@ -31,7 +40,7 @@ project1/
 - 订单流转：PAID -> ACCEPTED -> PREPARING -> DELIVERING -> COMPLETED
 - 管理员端：全局订单列表与详情、统计卡片、批量导入用户
 - 管理员端：用户列表、角色调整、状态启停、重置密码
-- AI 功能：菜品推荐排序、菜品文案生成、图片提示词生成
+- AI 相关：规则推荐排序、可选模型生成菜品文案、图片提示词生成（不直接生成图片）
 - 食堂体系：旧饭 / 新饭 / 多饭 与 6 个食堂区域结构
 - 前端演示页：登录页、用户页、商家页、管理员页
 - C++ 工具：测试数据 SQL 生成、CSV 销售统计
@@ -40,16 +49,17 @@ project1/
 
 ### 5.1 初始化数据库
 
+在克隆后的仓库根目录打开 PowerShell。数据库初始化、后端和前端分别使用终端；后续命令均从仓库根目录开始执行。`schema.sql` 会删除并重建目标库中的表，**只对专用的空白演示库执行；不要对已有数据的数据库运行**。
+
 ```powershell
-cd F:\study\database\project1
-mysql -u root -p -e "DROP DATABASE IF EXISTS campus_takeout; CREATE DATABASE campus_takeout DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-Get-Content -Raw .\schema.sql | mysql -u root -p campus_takeout 
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS campus_takeout DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+Get-Content -Raw .\database\schema.sql | mysql -u root -p campus_takeout
 ```
 
 ### 5.2 启动后端
 
 ```powershell
-cd F:\study\database\project1\backend-go
+Set-Location .\backend-go
 $env:MYSQL_DSN="root:your_mysql_password@tcp(127.0.0.1:3306)/campus_takeout?parseTime=true&charset=utf8mb4&loc=Local"
 $env:DB_MAX_OPEN_CONNS="50"
 $env:DB_MAX_IDLE_CONNS="10"
@@ -67,7 +77,7 @@ go run .
 ### 5.3 启动前端
 
 ```powershell
-cd F:\study\database\project1\frontend
+Set-Location .\frontend
 npm install
 npm run dev
 ```
@@ -75,12 +85,14 @@ npm run dev
 ### 5.4 编译 C++ 工具
 
 ```powershell
-cd F:\study\database\project1\cpp-tools
+Set-Location .\cpp-tools
 g++ -std=c++17 data_generator.cpp -o data_generator.exe
 g++ -std=c++17 sales_analyzer.cpp -o sales_analyzer.exe
 ```
 
 ## 6. 测试账号
+
+以下仅供本地演示，公开部署前必须删除或重设这些默认账号与密码。
 
 - admin / 123456
 - student01 / 123456
@@ -109,7 +121,6 @@ g++ -std=c++17 sales_analyzer.cpp -o sales_analyzer.exe
 
 ## 10. 后续计划
 
-- 增加前端订单详情页与更细粒度状态提示
 - 增加导出订单 CSV 的后端接口
 - 增加基础自动化测试用例
 - 增加销售统计可视化页面
